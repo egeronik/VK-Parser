@@ -14,6 +14,14 @@ access_token = config.ACCESS_TOKEN
 
 # Кастомная функция получения всей payload
 def recvall(sock):
+    """Функция для получения всего сообщения целиком из сокета
+
+    Args:
+        sock (_type_): сокет
+
+    Returns:
+        _type_: Цельное сообщение из сокета
+    """
     BUFF_SIZE = 4096  # 4 KiB
     data = b""
     while True:
@@ -24,16 +32,32 @@ def recvall(sock):
             break
     return data
 
-# Функция получения количества подписчиков в канале
+
 def getChannelSubscribers(group_id: int) -> dict:
+    """Функция получения количества подписчиков в группе
+
+    Args:
+        group_id (int): ID Группы
+
+    Returns:
+        dict: Возвращает dict содержащий число подписчиков по ключу 'subscribers'
+    """
     res = requests.get(
         f"{api_url}groups.getMembers?group_id={group_id}&count=0&access_token={access_token}&v={api_version}"
     )
     return {"subscribers": json.loads(res.text)["response"]["count"]}
 
 
-# Функция получения N последних постов
 def getChannelLastPosts(group_id: int, count: int = 100) -> dict:
+    """Получение информации по N последним постам в группе
+
+    Args:
+        group_id (int): ID Группы
+        count (int, optional): Количество последних постов которые нужно получить. По умолчанию 100.
+
+    Returns:
+        dict: Возвращает dict с информацией о постах, ключи: comments,date,likes,reposts,views,text,photos,photos
+    """
     assert count <= 100
     res = requests.get(
         f"{api_url}wall.get?owner_id={-group_id}&count={count}&access_token={access_token}&v={api_version}"
@@ -60,17 +84,23 @@ def getChannelLastPosts(group_id: int, count: int = 100) -> dict:
     return data
 
 
-# Класс сервера
 class MyTCPHandler(socketserver.BaseRequestHandler):
-    # Обработчик соединения
+    """Класс сокет-сервера
+
+    Args:
+        socketserver (_type_): Родительский класс из библеотеки
+    """
+
     def handle(self):
+        """Обработчик соединения
+        """
         # Читаем реквест целиком
         task = json.loads(recvall(self.request))
 
         # По умолчанию отправляем ошибку
         res = {"type": "error", "data":{"error":"method not found"}}
 
-        # Разбор вариантов ТУТ ВЫЗЫВАЕШЬ СВОИ ФУНКЦИИ, результат любой функции dict!!!!
+        # Разбор вариантов
         if task["method"] == "subs":
             # Меняем тип колбека на успешный
             res["type"] = "success"
@@ -86,6 +116,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
         self.request.sendall(str.encode(json.dumps(res)))
 
 
-# Поднимаем сокет-сервер
-with socketserver.TCPServer((HOST, PORT), MyTCPHandler) as server:
-    server.serve_forever()
+# # Поднимаем сокет-сервер
+if __name__ == "__main__":
+    with socketserver.TCPServer((HOST, PORT), MyTCPHandler) as server:
+        server.serve_forever()
