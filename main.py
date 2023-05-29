@@ -2,6 +2,7 @@ import requests
 import json
 import socketserver
 import config
+import traceback
 
 # Конфиг сокет-сервера
 HOST = "127.0.0.1"  # IP сокетсервера, в нашем случае лупбек
@@ -47,6 +48,20 @@ def getChannelSubscribers(group_id: int) -> dict:
     )
     return {"subscribers": json.loads(res.text)["response"]["count"]}
 
+def getChannelID(group_shor_name: str) -> dict:
+    """Функция получения ID группы по шортнейму
+
+    Args:
+        group_shor_name (str): шортнейм, последняя часть ссылки типо countryballs_re
+
+    Returns:
+        dict: Возвращает dict с всей информацией по группе
+    """
+    res = requests.get(
+        f"{api_url}groups.getById?group_id={group_shor_name}&access_token={access_token}&v={api_version}"
+    )
+    return json.loads(res.text)["response"][0]
+
 
 def getChannelLastPosts(group_id: int, count: int = 100) -> dict:
     """Получение информации по N последним постам в группе
@@ -60,7 +75,7 @@ def getChannelLastPosts(group_id: int, count: int = 100) -> dict:
     """
     assert count <= 100
     res = requests.get(
-        f"{api_url}wall.get?owner_id={-group_id}&count={count}&access_token={access_token}&v={api_version}"
+        f"{api_url}wall.get?owner_id=-{group_id}&count={count}&access_token={access_token}&v={api_version}"
     )
     res = json.loads(res.text)["response"]["items"]
     data = []
@@ -95,26 +110,36 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
         """Обработчик соединения
         """
         # Читаем реквест целиком
-        task = json.loads(recvall(self.request))
+        task = dict(json.loads(recvall(self.request)))
 
         # По умолчанию отправляем ошибку
         res = {"type": "error", "data":{"error":"method not found"}}
 
-        # Разбор вариантов
-        if task["method"] == "subs":
-            # Меняем тип колбека на успешный
-            res["type"] = "success"
-            # Вызываем нужную функцию
-            res["data"] = getChannelSubscribers(task["data"])
+        try:
+            # Разбор вариантов
+            if task["method"] == "subs":
+                # Меняем тип колбека на успешный
+                res["type"] = "success"
+                # Вызываем нужную функцию
+                res["data"] = getChannelSubscribers(task["channel_id"])
+                
+            elif task["method"] == "posts":
+                res["type"] = "success"
+                # Тут пример как можно вызвать метод с необязательным аргом. В нашем случае количество посотов можно не указывать. По умолчанию будет 100
+                res["data"] = getChannelLastPosts(task["channel_id"], int(task.get("count",100)))
             
-        elif task["method"] == "posts":
-            res["type"] = "success"
-            res["data"] = getChannelLastPosts(task["data"]["channel_id"], task["data"]["count"])
-            
+            elif task["method"] == "group":
+                res["type"] = "success"
+                res["data"] = getChannelID(task["group_shor_name"])
+
+        except KeyError:
+            res = {"type": "error", "data":{"error":"Wrong args"}}
+        except Exception as e:
+            res = {"type": "error", "data":{"error": traceback.format_exc()}}
+                
 
         # Отправляем результат
         self.request.sendall(str.encode(json.dumps(res)))
-
 
 # # Поднимаем сокет-сервер
 if __name__ == "__main__":
